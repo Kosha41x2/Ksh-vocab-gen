@@ -148,84 +148,31 @@ namespace VocabGen.Grammar
                 }
 
                 string rightText = line.Substring(arrow + 2).Trim();
-                float weight = 1f;
-                int openWeight = rightText.LastIndexOf('(');
-                int closeWeight = rightText.LastIndexOf(')');
-                if (openWeight >= 0 || closeWeight >= 0)
+                string[] alternatives = rightText.Split('|');
+                for (int alternativeIndex = 0; alternativeIndex < alternatives.Length; alternativeIndex++)
                 {
-                    if (openWeight < 0 || closeWeight != rightText.Length - 1 || closeWeight < openWeight)
+                    string alternative = alternatives[alternativeIndex].Trim();
+                    string location = "Line " + (i + 1) + ", alternative " + (alternativeIndex + 1) + ": ";
+                    if (!TryParseAlternative(alternative, variables, terminals,
+                            out string[] rightNames, out float weight, out error))
                     {
-                        error = "Line " + (i + 1) + ": put an optional weight in parentheses at the end, for example '(2)'.";
+                        error = location + error;
                         return false;
                     }
 
-                    string weightText = rightText.Substring(openWeight + 1, closeWeight - openWeight - 1).Trim();
-                    if (!float.TryParse(weightText, NumberStyles.Float, CultureInfo.InvariantCulture, out weight) ||
-                        float.IsNaN(weight) || float.IsInfinity(weight) || weight < 0f)
+                    if (!variableRules.ContainsKey(leftName))
                     {
-                        error = "Line " + (i + 1) + ": weight must be a finite, non-negative number using '.' for decimals.";
-                        return false;
+                        variableRules.Add(leftName, new List<float>());
                     }
+                    variableRules[leftName].Add(weight);
 
-                    rightText = rightText.Substring(0, openWeight).Trim();
-                }
-
-                string[] rightNames;
-                if (rightText == "ε" || string.Equals(rightText, "epsilon", StringComparison.OrdinalIgnoreCase))
-                {
-                    rightNames = new string[0];
-                }
-                else if (rightText.Length == 0)
-                {
-                    error = "Line " + (i + 1) + ": add right-side symbols, or use 'ε' for an empty production.";
-                    return false;
-                }
-                else
-                {
-                    var parsedNames = new List<string>();
-                    string[] groups = rightText.Split('.');
-                    for (int groupIndex = 0; groupIndex < groups.Length; groupIndex++)
+                    specifications.Add(new RuleSpecification
                     {
-                        string group = groups[groupIndex].Trim();
-                        if (group.Length == 0)
-                        {
-                            error = "Line " + (i + 1) + ": a period must have a symbol on both sides.";
-                            return false;
-                        }
-
-                        string[] groupNames = group.Split(new[] { ' ', '\t', '\r' }, StringSplitOptions.RemoveEmptyEntries);
-                        parsedNames.AddRange(groupNames);
-                    }
-
-                    rightNames = parsedNames.ToArray();
-                    for (int j = 0; j < rightNames.Length; j++)
-                    {
-                        if (rightNames[j] == "ε" || string.Equals(rightNames[j], "epsilon", StringComparison.OrdinalIgnoreCase))
-                        {
-                            error = "Line " + (i + 1) + ": use 'ε' by itself for an empty production.";
-                            return false;
-                        }
-
-                        if (FindSymbol(rightNames[j], variables, terminals) == null)
-                        {
-                            error = "Line " + (i + 1) + ": right-side symbol '" + rightNames[j] + "' is not declared.";
-                            return false;
-                        }
-                    }
+                        LeftName = leftName,
+                        RightNames = rightNames,
+                        Weight = weight
+                    });
                 }
-
-                if (!variableRules.ContainsKey(leftName))
-                {
-                    variableRules.Add(leftName, new List<float>());
-                }
-                variableRules[leftName].Add(weight);
-
-                specifications.Add(new RuleSpecification
-                {
-                    LeftName = leftName,
-                    RightNames = rightNames,
-                    Weight = weight
-                });
             }
 
             if (specifications.Count == 0)
@@ -249,6 +196,86 @@ namespace VocabGen.Grammar
                 if (!hasPositiveWeight)
                 {
                     error = "Variable '" + entry.Key + "' has rules, but all of their weights are zero.";
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool TryParseAlternative(
+            string rightText,
+            VariableSymbol[] variables,
+            TerminalSymbol[] terminals,
+            out string[] rightNames,
+            out float weight,
+            out string error)
+        {
+            rightNames = null;
+            weight = 1f;
+            error = string.Empty;
+
+            int openWeight = rightText.LastIndexOf('(');
+            int closeWeight = rightText.LastIndexOf(')');
+            if (openWeight >= 0 || closeWeight >= 0)
+            {
+                if (openWeight < 0 || closeWeight != rightText.Length - 1 || closeWeight < openWeight)
+                {
+                    error = "put an optional weight in parentheses at the end, for example '(2)'.";
+                    return false;
+                }
+
+                string weightText = rightText.Substring(openWeight + 1, closeWeight - openWeight - 1).Trim();
+                if (!float.TryParse(weightText, NumberStyles.Float, CultureInfo.InvariantCulture, out weight) ||
+                    float.IsNaN(weight) || float.IsInfinity(weight) || weight < 0f)
+                {
+                    error = "weight must be a finite, non-negative number using '.' for decimals.";
+                    return false;
+                }
+
+                rightText = rightText.Substring(0, openWeight).Trim();
+            }
+
+            if (rightText == "ε" || string.Equals(rightText, "epsilon", StringComparison.OrdinalIgnoreCase) ||
+                rightText.Length == 0)
+            {
+                rightNames = new[] { "ε" };
+                if (FindSymbol("ε", variables, terminals) == null)
+                {
+                    error = "the grammar is missing its built-in empty terminal symbol.";
+                    return false;
+                }
+
+                return true;
+            }
+
+            var parsedNames = new List<string>();
+            string[] groups = rightText.Split('.');
+            for (int groupIndex = 0; groupIndex < groups.Length; groupIndex++)
+            {
+                string group = groups[groupIndex].Trim();
+                if (group.Length == 0)
+                {
+                    error = "a period must have a symbol on both sides.";
+                    return false;
+                }
+
+                string[] groupNames = group.Split(new[] { ' ', '\t', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+                parsedNames.AddRange(groupNames);
+            }
+
+            rightNames = parsedNames.ToArray();
+            for (int i = 0; i < rightNames.Length; i++)
+            {
+                if (rightNames[i] == "ε" || string.Equals(rightNames[i], "epsilon", StringComparison.OrdinalIgnoreCase))
+                {
+                    error = "use 'ε' by itself for an empty production.";
+                    return false;
+                }
+
+                if (FindSymbol(rightNames[i], variables, terminals) == null)
+                {
+                    error = "right-side symbol '" + rightNames[i] + "' is not declared.";
                     return false;
                 }
             }
@@ -295,6 +322,19 @@ namespace VocabGen.Grammar
 
         private static Symbol FindSymbol(string name, VariableSymbol[] variables, TerminalSymbol[] terminals)
         {
+            if (name == "ε" || string.Equals(name, "epsilon", StringComparison.OrdinalIgnoreCase))
+            {
+                for (int i = 0; i < terminals.Length; i++)
+                {
+                    if (terminals[i] != null && terminals[i].IsEmpty)
+                    {
+                        return terminals[i];
+                    }
+                }
+
+                return null;
+            }
+
             VariableSymbol variable = FindVariable(name, variables);
             if (variable != null)
             {

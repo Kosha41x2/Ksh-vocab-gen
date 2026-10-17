@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 using UnityEngine;
@@ -20,9 +21,7 @@ namespace VocabGen.Grammar
         [SerializeField] private RuleInput ruleInput;
         [SerializeField] private GrammarBuildResultEvent onBuildFinished = new GrammarBuildResultEvent();
 
-        public VariableSymbol[] Variables { get; private set; } = new VariableSymbol[0];
-        public TerminalSymbol[] Terminals { get; private set; } = new TerminalSymbol[0];
-        public Rule[] Rules { get; private set; } = new Rule[0];
+        public Grammar Grammar { get; private set; }
         public string LastError { get; private set; } = string.Empty;
         public GrammarBuildResultEvent OnBuildFinished => onBuildFinished;
 
@@ -53,21 +52,24 @@ namespace VocabGen.Grammar
             }
 
             VariableSymbol[] variables = variableInput.Variables;
-            TerminalSymbol[] terminals = terminalInput.Terminals;
+            var terminalList = new List<TerminalSymbol>(terminalInput.Terminals);
+            if (!terminalList.Contains(TerminalSymbol.Empty))
+            {
+                terminalList.Add(TerminalSymbol.Empty);
+            }
+            TerminalSymbol[] terminals = terminalList.ToArray();
             if (!ruleInput.CreateRules(variables, terminals))
             {
                 Fail(ruleInput.LastError);
                 return;
             }
 
-            Variables = variables;
-            Terminals = terminals;
-            Rules = ruleInput.Rules;
+            Grammar = new Grammar(terminals, variables, ruleInput.Rules);
 
             // Associate every built rule with its matching left-side variable.
-            for (int i = 0; i < Variables.Length; i++)
+            for (int i = 0; i < Grammar.Variables.Count; i++)
             {
-                Variables[i].AddRules(Rules);
+                Grammar.Variables[i].AddRules(Grammar.Rules);
             }
 
             LastError = string.Empty;
@@ -81,22 +83,22 @@ namespace VocabGen.Grammar
             var output = new StringBuilder();
             output.AppendLine("Grammar built successfully.");
             output.Append("Variables: ");
-            AppendSymbols(output, Variables);
+            AppendSymbols(output, Grammar.Variables);
             output.AppendLine();
             output.Append("Terminals: ");
-            AppendSymbols(output, Terminals);
+            AppendSymbols(output, Grammar.Terminals);
             output.AppendLine();
             output.AppendLine("Rules:");
 
-            for (int i = 0; i < Rules.Length; i++)
+            for (int i = 0; i < Grammar.Rules.Count; i++)
             {
-                Rule rule = Rules[i];
+                Rule rule = Grammar.Rules[i];
                 output.Append("  ");
                 output.Append(rule.LeftSide.GetRepresentation());
                 output.Append(" -> ");
 
                 Symbol[] rightSide = rule.RightSide;
-                if (rightSide.Length == 0)
+                if (rightSide.Length == 0 || (rightSide.Length == 1 && IsEmptyTerminal(rightSide[0])))
                 {
                     output.Append('ε');
                 }
@@ -120,24 +122,29 @@ namespace VocabGen.Grammar
             return output.ToString();
         }
 
-        private static void AppendSymbols(StringBuilder output, Symbol[] symbols)
+        private static void AppendSymbols(StringBuilder output, IEnumerable<Symbol> symbols)
         {
-            for (int i = 0; i < symbols.Length; i++)
+            bool first = true;
+            foreach (Symbol symbol in symbols)
             {
-                if (i > 0)
+                if (!first)
                 {
                     output.Append(", ");
                 }
-                output.Append(symbols[i].GetRepresentation());
+                output.Append(IsEmptyTerminal(symbol) ? "ε" : symbol.GetRepresentation());
+                first = false;
             }
+        }
+
+        private static bool IsEmptyTerminal(Symbol symbol)
+        {
+            return symbol is TerminalSymbol terminal && terminal.IsEmpty;
         }
 
         private void Fail(string error)
         {
             LastError = error;
-            Variables = new VariableSymbol[0];
-            Terminals = new TerminalSymbol[0];
-            Rules = new Rule[0];
+            Grammar = null;
             string result = "Grammar build failed: " + error;
             Debug.LogError(result, this);
             onBuildFinished.Invoke(result);
