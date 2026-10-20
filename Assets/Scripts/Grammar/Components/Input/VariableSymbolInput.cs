@@ -16,6 +16,7 @@ namespace VocabGen.Grammar
 
         public VariableSymbol[] Variables { get; private set; } = new VariableSymbol[0];
         public string LastError { get; private set; } = string.Empty;
+        public string InputText => ReadInputText();
 
         private void Awake()
         {

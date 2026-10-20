@@ -16,6 +16,7 @@ namespace VocabGen.Grammar
 
         public TerminalSymbol[] Terminals { get; private set; } = new TerminalSymbol[0];
         public string LastError { get; private set; } = string.Empty;
+        public string InputText => ReadInputText();
 
         private void Awake()
         {

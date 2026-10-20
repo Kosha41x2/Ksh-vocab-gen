@@ -18,6 +18,7 @@ namespace VocabGen.Grammar
 
         public Rule[] Rules { get; private set; } = new Rule[0];
         public string LastError { get; private set; } = string.Empty;
+        public string InputText => ReadInputText();
 
         private void Awake()
         {
@@ -30,14 +31,22 @@ namespace VocabGen.Grammar
         public bool CreateRules(VariableSymbol[] variables, TerminalSymbol[] terminals)
         {
             ResolveInputFields();
-            if (variables == null || terminals == null)
-            {
-                return Fail("The grammar controller must supply variable and terminal symbols.");
-            }
-
             if (textMeshProInputField == null && legacyInputField == null)
             {
                 return Fail("Attach this component to a TMP_InputField or uGUI InputField GameObject.");
+            }
+
+            return CreateRules(ReadInputText(), variables, terminals);
+        }
+
+        /// <summary>
+        /// Parses rule text directly, without reading an input field, and creates rules only when all lines are valid.
+        /// </summary>
+        public bool CreateRules(string input, VariableSymbol[] variables, TerminalSymbol[] terminals)
+        {
+            if (variables == null || terminals == null)
+            {
+                return Fail("The grammar controller must supply variable and terminal symbols.");
             }
 
             for (int i = 0; i < variables.Length; i++)
@@ -53,7 +62,7 @@ namespace VocabGen.Grammar
                 return Fail("'" + collision + "' is declared as both a variable and a terminal.");
             }
 
-            if (!TryParseRules(ReadInputText(), variables, terminals,
+            if (!TryParseRules(input, variables, terminals,
                     out List<RuleSpecification> specifications, out string error))
             {
                 return Fail(error);

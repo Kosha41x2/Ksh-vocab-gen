@@ -4,63 +4,53 @@ using UnityEngine;
 namespace VocabGen.Grammar
 {
     /// <summary>
-    /// Displays the latest grammar build result in a TextMeshPro text object.
-    /// Attach this component to the same GameObject as a TMP text component.
+    /// Displays a UnityEvent string in a selectable TMP_InputField.
+    /// Connect the desired source events to DisplayResult in the Inspector.
     /// </summary>
     public sealed class GrammarBuildResultText : MonoBehaviour
     {
-        [SerializeField] private GrammarController grammarController;
-
+        [SerializeField] private TMP_InputField outputInputField;
         private TMP_Text outputText;
 
         private void Awake()
         {
-            outputText = GetComponent<TMP_Text>();
-        }
-
-        private void OnEnable()
-        {
-            if (outputText == null)
-            {
-                outputText = GetComponent<TMP_Text>();
-            }
-
-            if (grammarController == null)
-            {
-                grammarController = FindFirstObjectByType<GrammarController>();
-            }
-
-            if (grammarController == null)
-            {
-                Debug.LogError("Assign a GrammarController to display grammar build results.", this);
-                return;
-            }
-
-            grammarController.OnBuildFinished.AddListener(DisplayResult);
-        }
-
-        private void OnDisable()
-        {
-            if (grammarController != null)
-            {
-                grammarController.OnBuildFinished.RemoveListener(DisplayResult);
-            }
+            ResolveOutputComponents();
         }
 
         public void DisplayResult(string result)
         {
-            if (outputText == null)
+            ResolveOutputComponents();
+
+            if (outputInputField != null)
             {
-                outputText = GetComponent<TMP_Text>();
+                outputInputField.text = result;
+                return;
             }
 
             if (outputText == null)
             {
-                Debug.LogError("Attach this component to a TextMeshPro text object.", this);
+                Debug.LogError("Assign a TMP_InputField or attach this component to one.", this);
                 return;
             }
 
             outputText.text = result;
+        }
+
+        private void ResolveOutputComponents()
+        {
+            if (outputInputField == null)
+            {
+                outputInputField = GetComponent<TMP_InputField>();
+            }
+
+            if (outputInputField != null)
+            {
+                outputText = outputInputField.textComponent;
+            }
+            else if (outputText == null)
+            {
+                outputText = GetComponent<TMP_Text>();
+            }
         }
     }
 }
