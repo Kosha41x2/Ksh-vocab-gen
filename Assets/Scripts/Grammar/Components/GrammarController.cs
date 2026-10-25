@@ -397,17 +397,9 @@ namespace VocabGen.Grammar
                 return;
             }
 
-            if (!TryParseIndexes(variableInput.InputText, "variable", out List<int> variableIndexes, out string error) ||
-                !TryParseIndexes(terminalInput.InputText, "terminal", out List<int> terminalIndexes, out error) ||
-                !TryParseIndexes(ruleInput.InputText, "rule", out List<int> ruleIndexes, out error))
-            {
-                PublishModificationError(error);
-                return;
-            }
-
-            if (!IndexesAreInRange(variableIndexes, Grammar.Variables.Count, "variable", out error) ||
-                !IndexesAreInRange(terminalIndexes, Grammar.Terminals.Count, "terminal", out error) ||
-                !IndexesAreInRange(ruleIndexes, Grammar.Rules.Count, "rule", out error))
+            if (!TryParseIndexes(variableInput.InputText, "variable", Grammar.Variables.Count, out List<int> variableIndexes, out string error) ||
+                !TryParseIndexes(terminalInput.InputText, "terminal", Grammar.Terminals.Count, out List<int> terminalIndexes, out error) ||
+                !TryParseIndexes(ruleInput.InputText, "rule", Grammar.Rules.Count, out List<int> ruleIndexes, out error))
             {
                 PublishModificationError(error);
                 return;
@@ -451,7 +443,7 @@ namespace VocabGen.Grammar
             PublishModificationResult("Grammar modification finished.", messages);
         }
 
-        private static bool TryParseIndexes(string text, string kind, out List<int> indexes, out string error)
+        private static bool TryParseIndexes(string text, string kind, int itemCount, out List<int> indexes, out string error)
         {
             indexes = new List<int>();
             error = string.Empty;
@@ -465,12 +457,52 @@ namespace VocabGen.Grammar
             for (int i = 0; i < entries.Length; i++)
             {
                 string entry = entries[i].Trim();
-                if (!int.TryParse(entry, NumberStyles.Integer, CultureInfo.InvariantCulture, out int index) || index < 0)
+                int rangeSeparator = entry.IndexOf("..", StringComparison.Ordinal);
+                if (rangeSeparator >= 0)
                 {
-                    error = "Enter " + kind + " indexes as comma-separated zero-based numbers (for example: 0,1,2).";
-                    return false;
+                    if (entry.IndexOf("..", rangeSeparator + 2, StringComparison.Ordinal) >= 0 ||
+                        !TryParseIndexValue(entry.Substring(0, rangeSeparator), out int rangeStart) ||
+                        !TryParseIndexValue(entry.Substring(rangeSeparator + 2), out int rangeEnd))
+                    {
+                        error = "Use " + kind + " indexes like 0,2..5,7 (comma-separated indexes and inclusive ranges).";
+                        return false;
+                    }
+
+                    if (rangeEnd < rangeStart)
+                    {
+                        error = "The " + kind + " index range '" + entry + "' must go from a lower index to a higher one.";
+                        return false;
+                    }
+                    if (rangeStart >= itemCount || rangeEnd >= itemCount)
+                    {
+                        error = "The " + kind + " index range '" + entry + "' is outside the current grammar.";
+                        return false;
+                    }
+
+                    for (int rangeIndex = rangeStart; ; rangeIndex++)
+                    {
+                        if (uniqueIndexes.Add(rangeIndex))
+                        {
+                            indexes.Add(rangeIndex);
+                        }
+                        if (rangeIndex == rangeEnd)
+                        {
+                            break;
+                        }
+                    }
+                    continue;
                 }
 
+                if (!TryParseIndexValue(entry, out int index))
+                {
+                    error = "Use " + kind + " indexes like 0,2..5,7 (comma-separated indexes and inclusive ranges).";
+                    return false;
+                }
+                if (index >= itemCount)
+                {
+                    error = "The " + kind + " index " + index + " is outside the current grammar.";
+                    return false;
+                }
                 if (uniqueIndexes.Add(index))
                 {
                     indexes.Add(index);
@@ -480,19 +512,9 @@ namespace VocabGen.Grammar
             return true;
         }
 
-        private static bool IndexesAreInRange(List<int> indexes, int count, string kind, out string error)
+        private static bool TryParseIndexValue(string text, out int index)
         {
-            for (int i = 0; i < indexes.Count; i++)
-            {
-                if (indexes[i] >= count)
-                {
-                    error = "The " + kind + " index " + indexes[i] + " is outside the current grammar.";
-                    return false;
-                }
-            }
-
-            error = string.Empty;
-            return true;
+            return int.TryParse(text.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out index) && index >= 0;
         }
 
         private bool IsUsedByAnyRule(Symbol symbol)
